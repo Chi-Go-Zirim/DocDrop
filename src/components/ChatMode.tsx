@@ -48,6 +48,7 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
         // Send to custom webhook
         const payload = {
           message: userMessage,
+          userId: 'chigozirimkalu_user_id',
           file: selectedFile ? {
             name: selectedFile.file.name,
             type: selectedFile.file.type,
