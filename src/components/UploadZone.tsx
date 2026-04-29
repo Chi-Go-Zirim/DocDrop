@@ -3,7 +3,7 @@ import { Upload, File, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface UploadZoneProps {
-  onFilesAdded: (files: FileList) => void;
+  onFilesAdded: (files: File[]) => void;
 }
 
 export const UploadZone: React.FC<UploadZoneProps> = ({ onFilesAdded }) => {
@@ -19,17 +19,44 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onFilesAdded }) => {
     setIsDragging(false);
   }, []);
 
+  const allowedExtensions = ['.pdf', '.xlsx', '.txt', '.csv'];
+  const allowedTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'text/csv'
+  ];
+
+  const validateFiles = (files: FileList): File[] => {
+    return Array.from(files).filter(file => {
+      const extension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      return allowedTypes.includes(file.type) || allowedExtensions.includes(extension);
+    });
+  };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onFilesAdded(e.dataTransfer.files);
+      const validFiles = validateFiles(e.dataTransfer.files);
+      if (validFiles.length > 0) {
+        onFilesAdded(validFiles);
+      } else {
+        alert("Invalid file type. Please upload PDF, XLSX, TXT, or CSV files.");
+      }
     }
   }, [onFilesAdded]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onFilesAdded(e.target.files);
+      const validFiles = validateFiles(e.target.files);
+      if (validFiles.length > 0) {
+        onFilesAdded(validFiles);
+      } else {
+        alert("Invalid file type. Please upload PDF, XLSX, TXT, or CSV files.");
+      }
+      // Reset input value so same file can be selected again
+      e.target.value = '';
     }
   };
 
@@ -49,6 +76,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onFilesAdded }) => {
         id="file-upload"
         type="file"
         multiple
+        accept=".pdf,.xlsx,.txt,.csv"
         className="hidden"
         onChange={handleFileInput}
       />
@@ -59,7 +87,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onFilesAdded }) => {
           </div>
           <div>
             <h3 className="text-lg font-medium text-white mb-1">Drop documents here</h3>
-            <p className="text-sm text-text-muted">Supports PDF, DOCX, XLSX (Max 50MB)</p>
+            <p className="text-sm text-text-muted">Supports PDF, XLSX, TXT, CSV (Max 50MB)</p>
           </div>
         </div>
       </label>

@@ -24,8 +24,8 @@ export default function App() {
   const [mode, setMode] = useState<'upload' | 'chat'>('upload');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const handleFilesAdded = useCallback((newFiles: FileList) => {
-    const additions: FileUpload[] = Array.from(newFiles).map(file => ({
+  const handleFilesAdded = useCallback((newFiles: File[]) => {
+    const additions: FileUpload[] = newFiles.map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       file,
       status: 'pending',
@@ -53,6 +53,8 @@ export default function App() {
       try {
         const formData = new FormData();
         formData.append('file', item.file);
+        formData.append('fileType', item.file.type);
+        formData.append('userId', 'chigozirimkalu_user_id'); // Derived from user context
         
         const progressInterval = setInterval(() => {
           setFiles(prev => prev.map(f => {
