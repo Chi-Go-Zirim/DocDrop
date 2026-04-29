@@ -7,7 +7,8 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UploadZone } from './components/UploadZone.tsx';
 import { FileItem, FileStatus } from './components/FileItem.tsx';
-import { Send, Sparkles, Zap } from 'lucide-react';
+import { ChatMode } from './components/ChatMode.tsx';
+import { Send, Sparkles, Zap, LayoutDashboard, MessageSquareText, Menu, X, Shield } from 'lucide-react';
 
 interface FileUpload {
   id: string;
@@ -17,9 +18,11 @@ interface FileUpload {
 }
 
 export default function App() {
-  const [webhookUrl] = useState(import.meta.env.VITE_DEFAULT_WEBHOOK_URL || '');
+  const [webhookUrl] = useState(import.meta.env.VITE_UPLOAD_WEBHOOK_URL || '');
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [mode, setMode] = useState<'upload' | 'chat'>('upload');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleFilesAdded = useCallback((newFiles: FileList) => {
     const additions: FileUpload[] = Array.from(newFiles).map(file => ({
@@ -36,8 +39,8 @@ export default function App() {
   };
 
   const uploadFiles = async () => {
-    if (!webhookUrl) {
-      alert('Webhook URL not configured. Please check your .env file.');
+    if (!webhookUrl || webhookUrl.includes('placeholder')) {
+      alert('Upload Webhook URL not configured. Please add VITE_UPLOAD_WEBHOOK_URL to your environment variables in the Settings menu.');
       return;
     }
 
@@ -58,104 +61,194 @@ export default function App() {
           }));
         }, 100);
 
-        const response = await fetch(webhookUrl, { method: 'POST', body: formData });
+        const response = await fetch(webhookUrl, { 
+          method: 'POST', 
+          body: formData 
+        });
+
         clearInterval(progressInterval);
 
         if (response.ok) {
           setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'success', progress: 100 } : f));
         } else {
+          const errorText = await response.text().catch(() => 'Unknown error');
+          console.error(`Upload failed with status ${response.status}: ${errorText}`);
           setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
+          alert(`Upload failed (${response.status}). Check terminal/console for details.`);
         }
       } catch (error) {
         console.error('Upload failed:', error);
         setFiles(prev => prev.map(f => f.id === item.id ? { ...f, status: 'error' } : f));
+        alert('Upload connection failed. This is likely due to CORS or the URL being unreachable.');
       }
     }
     setIsUploading(false);
   };
 
+  const navItems = [
+    { id: 'upload' as const, label: 'Upload Terminal', icon: LayoutDashboard },
+    { id: 'chat' as const, label: 'AI Assistance', icon: MessageSquareText },
+  ];
+
   return (
-    <div className="min-h-screen bg-bg-dark text-white selection:bg-primary/30 flex flex-col items-center">
+    <div className="flex min-h-screen bg-bg-dark text-white selection:bg-primary/30 h-screen overflow-hidden">
       {/* Background decoration */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20 z-0">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-primary/10 rounded-full blur-[120px]" />
       </div>
 
-      <nav className="w-full relative z-10 py-8 px-10 flex justify-center">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white shadow-[0_0_20px_rgba(59,130,246,0.5)]">
-            <Zap size={22} strokeWidth={2.5} fill="currentColor" />
+      {/* Sidebar - Desktop */}
+      <aside className="hidden md:flex w-64 flex-col glass-panel border-r border-white/5 z-20">
+        <div className="p-8 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+            <Zap size={18} strokeWidth={2.5} fill="currentColor" />
           </div>
-          <span className="text-2xl font-bold tracking-tight">Doc<span className="text-secondary">Drop</span></span>
+          <span className="text-xl font-bold tracking-tight">DocDrop</span>
         </div>
-      </nav>
 
-      <main className="relative z-10 w-full max-w-2xl px-6 py-12 md:py-20 flex flex-col gap-12 items-center text-center">
-        <header className="space-y-6">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel border-white/10 text-primary text-xs font-bold uppercase tracking-widest">
-            <Sparkles size={14} className="fill-primary" />
-            Simple • Secure • Instant
+        <nav className="flex-1 px-4 py-4 space-y-2">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setMode(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-sm font-medium
+                ${mode === item.id 
+                  ? 'bg-primary/10 text-primary' 
+                  : 'text-zinc-500 hover:text-white hover:bg-white/5'
+                }`}
+            >
+              <item.icon size={18} />
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-6 mt-auto border-t border-white/5 opacity-40">
+          <p className="text-[10px] uppercase tracking-widest font-bold text-center">DocDrop v2.1</p>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col relative z-10 overflow-hidden">
+        {/* Mobile Header */}
+        <header className="md:hidden flex items-center justify-between p-6 border-b border-white/5 bg-bg-dark/80 backdrop-blur-xl">
+          <div className="flex items-center gap-2">
+            <Zap size={20} className="text-primary" />
+            <span className="text-lg font-bold tracking-tight">DocDrop</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-black tracking-tight leading-[1.1]">
-            Drop your documents, <br />
-            <span className="text-primary italic">pipe</span> to your code.
-          </h1>
-          <p className="text-lg text-text-muted max-w-md mx-auto leading-relaxed">
-            The minimal terminal for document dispatch. One drop, one click, one successful delivery to your endpoint.
-          </p>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 rounded-xl bg-white/5 text-zinc-400">
+            <Menu size={20} />
+          </button>
         </header>
 
-        <div className="w-full space-y-8">
-          <UploadZone onFilesAdded={handleFilesAdded} />
-          
-          <AnimatePresence mode="popLayout">
-            {files.length > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="flex flex-col gap-3"
-              >
-                {files.map(file => (
-                  <FileItem 
-                    key={file.id} 
-                    name={file.file.name} 
-                    size={file.file.size} 
-                    status={file.status} 
-                    progress={file.progress} 
-                    onRemove={() => removeFile(file.id)} 
-                  />
-                ))}
-              </motion.div>
+        <main className="flex-1 overflow-y-auto p-6 md:p-10 flex flex-col items-center">
+          <div className="w-full max-w-4xl h-full flex flex-col gap-8">
+            {mode === 'upload' ? (
+              <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <header className="text-center space-y-4 pt-4 md:pt-10">
+                  <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-tight">
+                    Instant Document <span className="text-primary italic">Dispatch.</span>
+                  </h1>
+                  <p className="text-base text-text-muted max-w-lg mx-auto leading-relaxed">
+                    Drop files to pipe them directly to your destination. Simple, secure, and built for speed.
+                  </p>
+                </header>
+
+                <div className="w-full space-y-6">
+                  <UploadZone onFilesAdded={handleFilesAdded} />
+                  
+                  <AnimatePresence mode="popLayout">
+                    {files.length > 0 && (
+                      <div className="flex flex-col gap-3">
+                        {files.map(file => (
+                          <FileItem 
+                            key={file.id} 
+                            name={file.file.name} 
+                            size={file.file.size} 
+                            status={file.status} 
+                            progress={file.progress} 
+                            onRemove={() => removeFile(file.id)} 
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="pt-4 space-y-6">
+                    <button
+                      onClick={uploadFiles}
+                      disabled={isUploading || files.length === 0 || files.every(f => f.status === 'success')}
+                      className="btn-primary w-full h-16 text-lg tracking-wide uppercase flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"
+                    >
+                      {isUploading ? 'In Transit...' : 'Deliver Payload'}
+                    </button>
+                    <p className="text-center text-xs text-text-muted italic">
+                      Target: <span className="text-zinc-400 font-mono underline decoration-primary/30 decoration-dashed">{webhookUrl || 'None'}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 h-full min-h-[500px] animate-in fade-in slide-in-from-bottom-2 duration-500 flex flex-col">
+                <ChatMode files={files} />
+              </div>
             )}
-          </AnimatePresence>
-
-          <div className="pt-4 flex flex-col gap-4">
-            <button
-              onClick={uploadFiles}
-              disabled={isUploading || files.length === 0 || files.every(f => f.status === 'success')}
-              className="btn-primary w-full h-16 text-lg tracking-wide uppercase group flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"
-            >
-              {isUploading ? (
-                'Synchronizing...'
-              ) : (
-                <>
-                  Deliver Payload
-                  <Send size={20} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                </>
-              )}
-            </button>
-            <p className="text-xs text-text-muted italic">
-              Dispatching to: <span className="text-zinc-400 font-mono underline decoration-primary/30 decoration-dashed">{webhookUrl || 'Not configured'}</span>
-            </p>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
 
-      <footer className="mt-auto py-12 opacity-40">
-        <p className="text-[10px] uppercase tracking-widest font-bold">DocDrop v1.0 • Built for Builders</p>
-      </footer>
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden"
+            />
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              className="fixed inset-y-0 left-0 w-64 bg-bg-dark z-40 p-8 flex flex-col md:hidden border-r border-white/10"
+            >
+              <div className="flex items-center justify-between mb-12">
+                <div className="flex items-center gap-3">
+                  <Zap size={24} className="text-primary" />
+                  <span className="text-2xl font-bold tracking-tight">DocDrop</span>
+                </div>
+                <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-zinc-500">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <nav className="flex-1 space-y-2">
+                {navItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setMode(item.id);
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-4 px-6 py-4 rounded-xl transition-all
+                      ${mode === item.id 
+                        ? 'bg-primary text-white' 
+                        : 'text-zinc-500 hover:text-white'
+                      }`}
+                  >
+                    <item.icon size={20} />
+                    <span className="font-semibold">{item.label}</span>
+                  </button>
+                ))}
+              </nav>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+
 
