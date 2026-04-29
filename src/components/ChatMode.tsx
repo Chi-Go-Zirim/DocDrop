@@ -49,7 +49,7 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
         // Send to custom webhook
         const payload = {
           message: userMessage,
-          userId: 'chigozirimkalu_user_id',
+          userId: 'chigozirimkalu@gmail.com',
           file: selectedFile ? {
             name: selectedFile.file.name,
             type: selectedFile.file.type,
@@ -65,21 +65,50 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
         });
 
         if (response.ok) {
-          const data = await response.json();
+          const contentType = response.headers.get('content-type');
+          let data: any;
           
-          // n8n often returns an array [ { ... } ]
-          const responseSource = Array.isArray(data) ? data[0] : data;
+          if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+          } else {
+            data = await response.text();
+          }
           
-          botResponse = responseSource.output || 
-                        responseSource.response || 
-                        responseSource.text || 
-                        responseSource.message || 
-                        (typeof responseSource === 'string' ? responseSource : "");
+          console.log("Webhook response data:", data);
+          
+          const extractText = (obj: any): string => {
+            if (!obj) return "";
+            if (typeof obj === 'string') return obj;
+            
+            // Priority keys for n8n/webhook responses
+            const keys = ['output', 'response', 'text', 'message', 'body', 'content', 'result', 'answer', 'reply', 'data'];
+            for (const key of keys) {
+              if (obj[key] && typeof obj[key] === 'string') return obj[key];
+            }
+            
+            // If it's an object but no standard key, check if any value is a string
+            for (const key in obj) {
+              if (typeof obj[key] === 'string' && obj[key].length > 5) return obj[key];
+            }
 
-          if (!botResponse && typeof data === 'string') botResponse = data;
+            return "";
+          };
+
+          if (typeof data === 'string') {
+            botResponse = data;
+          } else {
+            // Handle array vs object
+            const source = Array.isArray(data) ? data[0] : data;
+            botResponse = extractText(source);
+
+            if (!botResponse && typeof data === 'object') {
+              // Last resort: stringify if it's an object we don't recognize but contains data
+              botResponse = JSON.stringify(data, null, 2);
+            }
+          }
           
           if (!botResponse) {
-            botResponse = "The terminal received your message but provided an empty response. Please check your n8n workflow output.";
+            botResponse = "The webhook returned a successful status, but the response body was unparseable.";
           }
         } else {
           throw new Error(`Webhook responded with status ${response.status}. Ensure your service handles POST requests.`);

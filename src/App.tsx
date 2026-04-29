@@ -55,7 +55,7 @@ export default function App() {
         formData.append('file', item.file);
         formData.append('fileName', item.file.name);
         formData.append('fileType', item.file.type);
-        formData.append('userId', 'chigozirimkalu_user_id'); // Derived from user context
+        formData.append('userId', 'chigozirimkalu@gmail.com'); // Derived from user context
         
         const progressInterval = setInterval(() => {
           setFiles(prev => prev.map(f => {
