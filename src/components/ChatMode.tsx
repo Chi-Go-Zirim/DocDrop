@@ -66,7 +66,21 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
 
         if (response.ok) {
           const data = await response.json();
-          botResponse = data.response || data.text || data.message || (typeof data === 'string' ? data : "Message delivered to terminal.");
+          
+          // n8n often returns an array [ { ... } ]
+          const responseSource = Array.isArray(data) ? data[0] : data;
+          
+          botResponse = responseSource.output || 
+                        responseSource.response || 
+                        responseSource.text || 
+                        responseSource.message || 
+                        (typeof responseSource === 'string' ? responseSource : "");
+
+          if (!botResponse && typeof data === 'string') botResponse = data;
+          
+          if (!botResponse) {
+            botResponse = "The terminal received your message but provided an empty response. Please check your n8n workflow output.";
+          }
         } else {
           throw new Error(`Webhook responded with status ${response.status}. Ensure your service handles POST requests.`);
         }
