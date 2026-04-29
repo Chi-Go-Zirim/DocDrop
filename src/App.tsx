@@ -53,6 +53,7 @@ export default function App() {
       try {
         const formData = new FormData();
         formData.append('file', item.file);
+        formData.append('fileName', item.file.name);
         formData.append('fileType', item.file.type);
         formData.append('userId', 'chigozirimkalu_user_id'); // Derived from user context
         
