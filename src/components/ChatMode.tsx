@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Loader2, Bot, User, FileText, AlertCircle, MessageSquareText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   role: 'user' | 'bot';
@@ -184,8 +185,10 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === 'user' ? 'bg-primary text-white' : 'bg-secondary text-black'}`}>
                   {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
                 </div>
-                <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-primary/20 border border-primary/20 text-white' : 'bg-white/5 border border-white/10 text-zinc-200'}`}>
-                  {msg.content}
+                <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-primary/20 border border-primary/20 text-white' : 'bg-zinc-900/40 border border-white/5 text-zinc-200'}`}>
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
                 </div>
               </motion.div>
             ))}
