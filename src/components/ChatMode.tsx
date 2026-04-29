@@ -74,21 +74,33 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
             data = await response.text();
           }
           
-          console.log("Webhook response data:", data);
+          console.log("Full Webhook Response:", response.status, data);
           
           const extractText = (obj: any): string => {
             if (!obj) return "";
             if (typeof obj === 'string') return obj;
             
-            // Priority keys for n8n/webhook responses
-            const keys = ['output', 'response', 'text', 'message', 'body', 'content', 'result', 'answer', 'reply', 'data'];
+            // Priority keys for n8n/webhook responses (common AI agent outputs)
+            const keys = ['output', 'response', 'text', 'message', 'body', 'content', 'result', 'answer', 'reply', 'data', 'chat_output'];
             for (const key of keys) {
               if (obj[key] && typeof obj[key] === 'string') return obj[key];
+              // Sometimes n8n nests it in a 'data' or 'json' object
+              if (obj[key] && typeof obj[key] === 'object') {
+                const nested = extractText(obj[key]);
+                if (nested) return nested;
+              }
             }
             
-            // If it's an object but no standard key, check if any value is a string
+            // If it's an object but no standard key found, look for any string value that looks like content
             for (const key in obj) {
-              if (typeof obj[key] === 'string' && obj[key].length > 5) return obj[key];
+              if (typeof obj[key] === 'string' && obj[key].trim().length > 0) {
+                // Ignore small metadata-like strings
+                if (obj[key].length > 5) return obj[key];
+              }
+              if (typeof obj[key] === 'object' && obj[key] !== null) {
+                const nested = extractText(obj[key]);
+                if (nested) return nested;
+              }
             }
 
             return "";
@@ -97,18 +109,18 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
           if (typeof data === 'string') {
             botResponse = data;
           } else {
-            // Handle array vs object
+            // n8n often returns an array [ { json: { ... } } ] or just [ { ... } ]
             const source = Array.isArray(data) ? data[0] : data;
             botResponse = extractText(source);
 
-            if (!botResponse && typeof data === 'object') {
-              // Last resort: stringify if it's an object we don't recognize but contains data
-              botResponse = JSON.stringify(data, null, 2);
+            if (!botResponse && typeof data === 'object' && data !== null) {
+              // Last resort: if we can't find a string, stringify the data so the user can see what came back
+              botResponse = "Received structured data but no clear text output: " + JSON.stringify(data, null, 2);
             }
           }
           
           if (!botResponse) {
-            botResponse = "The webhook returned a successful status, but the response body was unparseable.";
+            botResponse = "The webhook returned success but no parseable text content was found in the response body.";
           }
         } else {
           throw new Error(`Webhook responded with status ${response.status}. Ensure your service handles POST requests.`);
