@@ -3,12 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UploadZone } from './components/UploadZone.tsx';
 import { FileItem, FileStatus } from './components/FileItem.tsx';
 import { ChatMode } from './components/ChatMode.tsx';
-import { Send, Sparkles, Zap, LayoutDashboard, MessageSquareText, Menu, X, Shield } from 'lucide-react';
+import { Auth } from './components/Auth.tsx';
+import { supabase } from './lib/supabase.ts';
+import { Send, Sparkles, Zap, LayoutDashboard, MessageSquareText, Menu, X, Shield, LogOut, User, Loader2 } from 'lucide-react';
 
 interface FileUpload {
   id: string;
@@ -18,12 +20,34 @@ interface FileUpload {
 }
 
 export default function App() {
+  const [user, setUser] = useState<any>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [uploadWebhookUrl] = useState(import.meta.env.VITE_UPLOAD_WEBHOOK_URL || '');
   const [chatWebhookUrl] = useState(import.meta.env.VITE_CHAT_WEBHOOK_URL || '');
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [mode, setMode] = useState<'upload' | 'chat'>('upload');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setIsAuthLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setIsAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
 
   const handleFilesAdded = useCallback((newFiles: File[]) => {
     const additions: FileUpload[] = newFiles.map(file => ({
@@ -56,7 +80,8 @@ export default function App() {
         formData.append('file', item.file);
         formData.append('fileName', item.file.name);
         formData.append('fileType', item.file.type);
-        formData.append('userId', 'chigozirimkalu@gmail.com'); // Derived from user context
+        formData.append('userId', user?.id || user?.email || 'anonymous');
+        formData.append('userEmail', user?.email || '');
         
         const progressInterval = setInterval(() => {
           setFiles(prev => prev.map(f => {
@@ -94,6 +119,18 @@ export default function App() {
     { id: 'chat' as const, label: 'Chat with Document', icon: MessageSquareText },
   ];
 
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="text-primary animate-spin" size={40} />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth onAuthComplete={() => {}} />;
+  }
+
   return (
     <div className="flex min-h-screen bg-bg-dark text-white selection:bg-primary/30 h-screen overflow-hidden">
       {/* Background decoration */}
@@ -130,8 +167,26 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="p-6 mt-auto border-t border-white/5 opacity-40">
-          <p className="text-[10px] uppercase tracking-widest font-bold text-center">DocDrop v2.1</p>
+        <div className="px-4 py-6 mt-auto border-t border-white/5 space-y-4">
+          <div className="flex items-center gap-3 px-4 py-2">
+            <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400">
+              <User size={16} />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">User Terminal</span>
+              <span className="text-xs text-zinc-300 truncate font-mono">{user?.email}</span>
+            </div>
+          </div>
+          
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 text-sm font-medium text-red-500 hover:bg-red-500/10"
+          >
+            <LogOut size={18} />
+            Disconnect
+          </button>
+          
+          <p className="text-[10px] uppercase tracking-widest font-bold text-center opacity-40">DocDrop v2.1</p>
         </div>
       </aside>
 
@@ -197,7 +252,7 @@ export default function App() {
               </div>
             ) : (
               <div className="flex-1 h-full min-h-[500px] animate-in fade-in slide-in-from-bottom-2 duration-500 flex flex-col">
-                <ChatMode files={files} webhookUrl={chatWebhookUrl} />
+                <ChatMode files={files} webhookUrl={chatWebhookUrl} user={user} />
               </div>
             )}
           </div>

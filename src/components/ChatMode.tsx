@@ -12,9 +12,10 @@ interface Message {
 interface ChatModeProps {
   files: { id: string; file: File; status: string }[];
   webhookUrl?: string;
+  user?: any;
 }
 
-export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
+export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl, user }) => {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
 
   // Automatically select the last uploaded file if none is selected or if new files arrive
@@ -75,7 +76,8 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
         query: userMessage,
         question: userMessage,
         sessionId,
-        userId: 'chigozirimkalu@gmail.com',
+        userId: user?.id || user?.email || 'anonymous',
+        userEmail: user?.email || '',
         context: {
           type: 'document_chat',
           fileId: selectedFile?.id,
