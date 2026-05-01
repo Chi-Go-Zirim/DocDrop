@@ -212,7 +212,7 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
             <MessageSquareText size={16} />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white leading-none">AI Terminal Assistant</h3>
+            <h3 className="text-sm font-bold text-white leading-none">AI Chat</h3>
             {selectedFile && (
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Context: {selectedFile.file.name}</p>
             )}

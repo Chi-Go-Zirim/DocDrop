@@ -8,8 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { UploadZone } from './components/UploadZone.tsx';
 import { FileItem, FileStatus } from './components/FileItem.tsx';
 import { ChatMode } from './components/ChatMode.tsx';
-import { Send, Sparkles, Zap, LayoutDashboard, MessageSquareText, Menu, X, Shield, Settings } from 'lucide-react';
-import { WebhookInput } from './components/WebhookInput.tsx';
+import { Send, Sparkles, Zap, LayoutDashboard, MessageSquareText, Menu, X, Shield } from 'lucide-react';
 
 interface FileUpload {
   id: string;
@@ -19,11 +18,11 @@ interface FileUpload {
 }
 
 export default function App() {
-  const [uploadWebhookUrl, setUploadWebhookUrl] = useState(import.meta.env.VITE_UPLOAD_WEBHOOK_URL || '');
-  const [chatWebhookUrl, setChatWebhookUrl] = useState(import.meta.env.VITE_CHAT_WEBHOOK_URL || '');
+  const [uploadWebhookUrl] = useState(import.meta.env.VITE_UPLOAD_WEBHOOK_URL || '');
+  const [chatWebhookUrl] = useState(import.meta.env.VITE_CHAT_WEBHOOK_URL || '');
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [mode, setMode] = useState<'upload' | 'chat' | 'settings'>('upload');
+  const [mode, setMode] = useState<'upload' | 'chat'>('upload');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleFilesAdded = useCallback((newFiles: File[]) => {
@@ -42,8 +41,7 @@ export default function App() {
 
   const uploadFiles = async () => {
     if (!uploadWebhookUrl || uploadWebhookUrl.includes('placeholder')) {
-      alert('Upload Webhook URL not configured. Please add VITE_UPLOAD_WEBHOOK_URL to your environment variables in the Settings menu or configure it in the Settings tab.');
-      setMode('settings');
+      alert('Upload Webhook URL not configured. Please add VITE_UPLOAD_WEBHOOK_URL to your environment variables in the Settings menu.');
       return;
     }
 
@@ -93,8 +91,7 @@ export default function App() {
 
   const navItems = [
     { id: 'upload' as const, label: 'Upload Terminal', icon: LayoutDashboard },
-    { id: 'chat' as const, label: 'AI Assistance', icon: MessageSquareText },
-    { id: 'settings' as const, label: 'Configuration', icon: Settings },
+    { id: 'chat' as const, label: 'AI Chat', icon: MessageSquareText },
   ];
 
   return (
@@ -195,49 +192,9 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            ) : mode === 'chat' ? (
+            ) : (
               <div className="flex-1 h-full min-h-[500px] animate-in fade-in slide-in-from-bottom-2 duration-500 flex flex-col">
                 <ChatMode files={files} webhookUrl={chatWebhookUrl} />
-              </div>
-            ) : (
-              <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-2xl mx-auto w-full pt-10 pb-20">
-                <header className="text-center space-y-4">
-                  <h1 className="text-3xl font-black tracking-tight">System Configuration</h1>
-                  <p className="text-sm text-text-muted">Manage your webhook endpoints and system settings.</p>
-                </header>
-
-                <div className="space-y-8">
-                  <div className="space-y-4">
-                    <h2 className="text-xs uppercase tracking-widest font-bold text-primary/60 px-2">Dispatch Settings</h2>
-                    <WebhookInput 
-                      value={uploadWebhookUrl} 
-                      onChange={setUploadWebhookUrl} 
-                    />
-                    <p className="text-[10px] text-zinc-500 px-2 leading-relaxed">
-                      This endpoint receives multipart/form-data containing document payloads for automated processing.
-                    </p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h2 className="text-xs uppercase tracking-widest font-bold text-secondary/60 px-2">Inference Settings</h2>
-                    <div className="glass-card p-6 flex flex-col gap-6">
-                      <div className="text-[14px] font-bold text-white uppercase tracking-[1px] leading-none">Chat AI Target</div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[12px] font-medium text-text-muted">CHAT WEBHOOK URL</label>
-                        <input
-                          type="url"
-                          placeholder="https://n8n.instance/webhook/..."
-                          value={chatWebhookUrl}
-                          onChange={(e) => setChatWebhookUrl(e.target.value)}
-                          className="w-full bg-zinc-900/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-1 focus:ring-secondary/40 transition-all"
-                        />
-                        <p className="text-[10px] text-zinc-500 mt-1">
-                          The application will look for an AI response in various fields like 'output', 'response', or 'text'.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
           </div>
