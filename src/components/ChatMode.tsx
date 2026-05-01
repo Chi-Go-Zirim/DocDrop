@@ -87,21 +87,9 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
             if (!obj) return "";
             if (typeof obj === 'string') return obj;
             
-            // 1. Direct AI Agent keys
-            const aiKeys = ['output', 'response', 'text', 'content', 'answer', 'reply', 'chat_output', 'chatOutput'];
-            for (const key of aiKeys) {
-              if (obj[key] && typeof obj[key] === 'string' && obj[key].trim().length > 0) {
-                const val = obj[key].trim();
-                // If it's a real answer (not just a status), prioritise it
-                if (val.length > 20 || (!val.toLowerCase().includes('delivered') && !val.toLowerCase().includes('started'))) {
-                  return val;
-                }
-              }
-            }
-
-            // 2. Nested containers (n8n often uses 'json', 'data', or 'body')
-            const containers = ['json', 'data', 'body', 'message', 'result'];
-            for (const key of containers) {
+            // Try common n8n/AI Agent keys first
+            const keys = ['output', 'response', 'text', 'content', 'answer', 'reply', 'chat_output', 'chatOutput', 'message', 'result', 'body', 'json', 'data'];
+            for (const key of keys) {
               if (obj[key]) {
                 if (typeof obj[key] === 'string' && obj[key].trim().length > 0) return obj[key].trim();
                 if (typeof obj[key] === 'object') {
@@ -110,20 +98,17 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
                 }
               }
             }
-            
-            // 3. Fallback: Any string that isn't a known status message
-            let longestFound = "";
+
+            // Fallback: look for any string value
             for (const key in obj) {
-              if (typeof obj[key] === 'string') {
-                const val = obj[key].trim();
-                if (val.length > longestFound.length) longestFound = val;
-              } else if (typeof obj[key] === 'object' && obj[key] !== null && key !== 'file') {
+              if (typeof obj[key] === 'string' && obj[key].trim().length > 0) return obj[key].trim();
+              if (typeof obj[key] === 'object' && obj[key] !== null && key !== 'file') {
                 const nested = extractText(obj[key]);
-                if (nested && nested.length > longestFound.length) longestFound = nested;
+                if (nested) return nested;
               }
             }
 
-            return longestFound;
+            return "";
           };
 
           if (typeof data === 'string') {
@@ -134,7 +119,7 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
             
             for (const item of items) {
               const text = extractText(item);
-              if (text && (text.length > bestMatch.length || (!text.toLowerCase().includes('delivered') && bestMatch.toLowerCase().includes('delivered')))) {
+              if (text && text.length > bestMatch.length) {
                 bestMatch = text;
               }
             }
@@ -145,12 +130,8 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
             }
           }
           
-          if (!botResponse || botResponse.toLowerCase().includes('delivered to terminal')) {
-             if (botResponse && botResponse.toLowerCase().includes('delivered to terminal')) {
-                botResponse = "The terminal acknowledged the request (" + botResponse + "), but no AI response was found. Ensure your n8n workflow is configured to return the Agent's output.";
-             } else {
-                botResponse = "The webhook returned success but no text content was found in the response.";
-             }
+          if (!botResponse) {
+            botResponse = "The webhook returned success but no text content was found.";
           }
         } else {
           throw new Error(`Webhook responded with status ${response.status}.`);
