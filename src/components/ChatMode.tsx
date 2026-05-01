@@ -11,9 +11,10 @@ interface Message {
 
 interface ChatModeProps {
   files: { id: string; file: File; status: string }[];
+  webhookUrl?: string;
 }
 
-export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
+export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(files.length > 0 ? files[0].id : null);
   const [sessionId] = useState(() => `session_${Math.random().toString(36).substring(7)}`);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -43,7 +44,7 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
     const selectedFile = files.find(f => f.id === selectedFileId);
 
     try {
-      const chatWebhook = import.meta.env.VITE_CHAT_WEBHOOK_URL;
+      const chatWebhook = webhookUrl || import.meta.env.VITE_CHAT_WEBHOOK_URL;
       let botResponse = "";
 
       if (chatWebhook && !chatWebhook.includes('placeholder')) {
