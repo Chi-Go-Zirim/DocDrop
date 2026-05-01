@@ -142,15 +142,24 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
 
           const findContent = (obj: any): string | null => {
             if (!obj) return null;
+            
+            // If the object itself is a string, check if it's a valid answer
             if (typeof obj === 'string') {
-              return isStatusMessage(obj) ? null : obj.trim();
+              const trimmed = obj.trim();
+              if (trimmed.length > 0 && !isStatusMessage(trimmed)) return trimmed;
+              return null;
             }
             
             if (typeof obj !== 'object') return null;
 
-            // 1. Try high-priority keys first
+            // 0. Priority: Explicit n8n Output from your screenshot
+            if (obj.output && typeof obj.output === 'string' && !isStatusMessage(obj.output)) {
+              return obj.output.trim();
+            }
+
+            // 1. Try other high-priority keys
             const priorityKeys = [
-              'output', 'response', 'text', 'content', 'answer', 'reply', 
+              'response', 'text', 'content', 'answer', 'reply', 
               'chat_output', 'chatOutput', 'message', 'result', 'fulfillmentText'
             ];
             
@@ -297,14 +306,14 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
             <MessageSquareText size={16} />
           </div>
           <div className="flex flex-col">
-            <h3 className="text-sm font-bold text-white leading-none">AI Chat</h3>
+            <h3 className="text-sm font-bold text-white leading-none">Chat with Document</h3>
             {selectedFile ? (
               <div className="flex items-center gap-1.5 mt-1.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
-                <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-medium">Chatting with: {selectedFile.file.name}</p>
+                <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-medium">Analyzing: {selectedFile.file.name}</p>
               </div>
             ) : (
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">No document selected</p>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Select a document to begin</p>
             )}
           </div>
         </div>

@@ -91,7 +91,7 @@ export default function App() {
 
   const navItems = [
     { id: 'upload' as const, label: 'Upload Terminal', icon: LayoutDashboard },
-    { id: 'chat' as const, label: 'AI Chat', icon: MessageSquareText },
+    { id: 'chat' as const, label: 'Chat with Document', icon: MessageSquareText },
   ];
 
   return (
