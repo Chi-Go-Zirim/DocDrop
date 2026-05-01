@@ -15,6 +15,7 @@ interface ChatModeProps {
 
 export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(files.length > 0 ? files[0].id : null);
+  const [sessionId] = useState(() => `session_${Math.random().toString(36).substring(7)}`);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -49,8 +50,9 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
         // Send to custom webhook
         const payload = {
           message: userMessage,
-          chatInput: userMessage, // Common for n8n AI Agent nodes
-          input: userMessage,     // Common for generic webhooks
+          chatInput: userMessage, // Expected by n8n AI Agent nodes
+          input: userMessage,     // Fallback
+          sessionId,              // Persistence for chat history in n8n
           userId: 'chigozirimkalu@gmail.com',
           file: selectedFile ? {
             name: selectedFile.file.name,
@@ -62,7 +64,10 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
 
         const response = await fetch(chatWebhook, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*'
+          },
           body: JSON.stringify(payload),
         });
 
@@ -82,79 +87,73 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
             if (!obj) return "";
             if (typeof obj === 'string') return obj;
             
-            // Priority order: AI agents often use these specific names for the final answer
-            const priorityKeys = ['output', 'response', 'text', 'content', 'answer', 'reply', 'chat_output', 'chatOutput'];
-            for (const key of priorityKeys) {
-              if (obj[key] && typeof obj[key] === 'string' && obj[key].trim().length > 2) {
+            // 1. Direct AI Agent keys
+            const aiKeys = ['output', 'response', 'text', 'content', 'answer', 'reply', 'chat_output', 'chatOutput'];
+            for (const key of aiKeys) {
+              if (obj[key] && typeof obj[key] === 'string' && obj[key].trim().length > 0) {
                 const val = obj[key].trim();
-                // If we find a string that isn't just a generic "delivered" message, return it
-                if (!val.toLowerCase().includes('delivered to terminal') && !val.toLowerCase().includes('workflow started')) {
+                // If it's a real answer (not just a status), prioritise it
+                if (val.length > 20 || (!val.toLowerCase().includes('delivered') && !val.toLowerCase().includes('started'))) {
                   return val;
                 }
               }
             }
 
-            // Fallback keys (more generic)
-            const fallbackKeys = ['message', 'body', 'result', 'data', 'json'];
-            for (const key of fallbackKeys) {
+            // 2. Nested containers (n8n often uses 'json', 'data', or 'body')
+            const containers = ['json', 'data', 'body', 'message', 'result'];
+            for (const key of containers) {
               if (obj[key]) {
-                if (typeof obj[key] === 'string' && obj[key].trim().length > 2) {
-                  return obj[key].trim();
-                }
-                if (typeof obj[key] === 'object' && obj[key] !== null) {
+                if (typeof obj[key] === 'string' && obj[key].trim().length > 0) return obj[key].trim();
+                if (typeof obj[key] === 'object') {
                   const nested = extractText(obj[key]);
                   if (nested) return nested;
                 }
               }
             }
             
-            // Greedily find any string that looks like content (longer strings)
-            let longestStr = "";
+            // 3. Fallback: Any string that isn't a known status message
+            let longestFound = "";
             for (const key in obj) {
               if (typeof obj[key] === 'string') {
-                if (obj[key].length > longestStr.length) longestStr = obj[key];
+                const val = obj[key].trim();
+                if (val.length > longestFound.length) longestFound = val;
               } else if (typeof obj[key] === 'object' && obj[key] !== null && key !== 'file') {
                 const nested = extractText(obj[key]);
-                if (nested && nested.length > longestStr.length) longestStr = nested;
+                if (nested && nested.length > longestFound.length) longestFound = nested;
               }
             }
 
-            return longestStr;
+            return longestFound;
           };
 
           if (typeof data === 'string') {
             botResponse = data;
           } else {
-            // Check all items if it's an array, or just the object
             const items = Array.isArray(data) ? data : [data];
-            let bestResponse = "";
+            let bestMatch = "";
             
             for (const item of items) {
               const text = extractText(item);
-              if (text && text.length > bestResponse.length) {
-                // Prefer longer responses, especially if the current best is just a "delivered" status
-                if (!text.toLowerCase().includes('delivered to terminal') || !bestResponse) {
-                  bestResponse = text;
-                }
+              if (text && (text.length > bestMatch.length || (!text.toLowerCase().includes('delivered') && bestMatch.toLowerCase().includes('delivered')))) {
+                bestMatch = text;
               }
             }
-            botResponse = bestResponse;
+            botResponse = bestMatch;
 
             if (!botResponse && typeof data === 'object' && data !== null) {
-              botResponse = "Received structured response but found no clear text content. Raw data: " + JSON.stringify(data, null, 2);
+              botResponse = JSON.stringify(data, null, 2);
             }
           }
           
           if (!botResponse || botResponse.toLowerCase().includes('delivered to terminal')) {
-             // If we still only have the "delivered" message, it means n8n hasn't sent the AI content back in this request.
              if (botResponse && botResponse.toLowerCase().includes('delivered to terminal')) {
-                botResponse = "The terminal acknowledged the request (" + botResponse + "), but no AI agent response was included. Ensure n8n is configured to 'Respond to Webhook' with the agent output.";
+                botResponse = "The terminal acknowledged the request (" + botResponse + "), but no AI response was found. Ensure your n8n workflow is configured to return the Agent's output.";
              } else {
-                botResponse = "The webhook returned success but no parseable text content was found in the response body.";
+                botResponse = "The webhook returned success but no text content was found in the response.";
              }
           }
         } else {
-          throw new Error(`Webhook responded with status ${response.status}. Ensure your service handles POST requests.`);
+          throw new Error(`Webhook responded with status ${response.status}.`);
         }
       } else {
         // Fallback to Gemini
