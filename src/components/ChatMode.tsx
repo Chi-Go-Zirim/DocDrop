@@ -15,7 +15,20 @@ interface ChatModeProps {
 }
 
 export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(files.length > 0 ? files[0].id : null);
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+
+  // Automatically select the last uploaded file if none is selected or if new files arrive
+  useEffect(() => {
+    if (!selectedFileId && files.length > 0) {
+      const uploadedFiles = files.filter(f => f.status === 'delivered' || f.status === 'processed');
+      if (uploadedFiles.length > 0) {
+        setSelectedFileId(uploadedFiles[uploadedFiles.length - 1].id);
+      } else {
+        setSelectedFileId(files[0].id);
+      }
+    }
+  }, [files, selectedFileId]);
+
   const [sessionId] = useState(() => `session_${Math.random().toString(36).substring(7)}`);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -36,31 +49,49 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
+    const currentSelectedFileId = selectedFileId;
+    const selectedFile = files.find(f => f.id === currentSelectedFileId);
+
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
     setError(null);
-
-    const selectedFile = files.find(f => f.id === selectedFileId);
 
     try {
       const chatWebhook = webhookUrl || import.meta.env.VITE_CHAT_WEBHOOK_URL;
       let botResponse = "";
 
       if (chatWebhook && !chatWebhook.includes('placeholder')) {
-        // Send to custom webhook
+        // Send to custom webhook with enhanced context
         const payload = {
           message: userMessage,
-          chatInput: userMessage, // Expected by n8n AI Agent nodes
-          input: userMessage,     // Fallback
-          sessionId,              // Persistence for chat history in n8n
+          chatInput: userMessage,
+          input: userMessage,
+          query: userMessage,     // Additional common key
+          question: userMessage,  // Additional common key
+          sessionId,
           userId: 'chigozirimkalu@gmail.com',
-          file: selectedFile ? {
+          // Structured context for AI agents
+          context: {
+            type: 'document_chat',
+            fileId: selectedFile?.id,
+            fileName: selectedFile?.file.name,
+            fileType: selectedFile?.file.type,
+            fileSize: selectedFile?.file.size,
+          },
+          // Legacy keys for backward compatibility
+          documentContext: selectedFile ? {
+            id: selectedFile.id,
             name: selectedFile.file.name,
             type: selectedFile.file.type,
             size: selectedFile.file.size
           } : null,
+          fileName: selectedFile?.file.name || 'None',
           timestamp: new Date().toISOString(),
+          metadata: {
+            source: 'DocDrop V2.1',
+            browser: navigator.userAgent
+          }
         };
 
         const response = await fetch(chatWebhook, {
@@ -80,6 +111,10 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
             data = await response.json();
           } else {
             data = await response.text();
+            // Try to parse text as JSON anyway if it looks like it
+            if (typeof data === 'string' && (data.startsWith('{') || data.startsWith('['))) {
+              try { data = JSON.parse(data); } catch (e) { /* ignore */ }
+            }
           }
           
           console.log("Full Webhook Response:", response.status, data);
@@ -88,28 +123,45 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
             if (!obj) return "";
             if (typeof obj === 'string') return obj;
             
-            // Try common n8n/AI Agent keys first
-            const keys = ['output', 'response', 'text', 'content', 'answer', 'reply', 'chat_output', 'chatOutput', 'message', 'result', 'body', 'json', 'data'];
+            // 1. Check for known priority keys (order matters)
+            const keys = [
+              'output', 'response', 'text', 'content', 'answer', 'reply', 
+              'chat_output', 'chatOutput', 'message', 'result', 'body', 
+              'data', 'json', 'fulfillmentText', 'speech'
+            ];
+            
             for (const key of keys) {
               if (obj[key]) {
-                if (typeof obj[key] === 'string' && obj[key].trim().length > 0) return obj[key].trim();
-                if (typeof obj[key] === 'object') {
+                if (typeof obj[key] === 'string' && obj[key].trim().length > 0) {
+                  // Ignore common "status" strings if possible
+                  const val = obj[key].trim();
+                  if (!val.toLowerCase().includes('delivered to terminal') || val.length > 30) {
+                     return val;
+                  }
+                }
+                if (typeof obj[key] === 'object' && obj[key] !== null) {
                   const nested = extractText(obj[key]);
                   if (nested) return nested;
                 }
               }
             }
 
-            // Fallback: look for any string value
+            // 2. Greedily find any string that looks like an answer
+            let longestStr = "";
             for (const key in obj) {
-              if (typeof obj[key] === 'string' && obj[key].trim().length > 0) return obj[key].trim();
-              if (typeof obj[key] === 'object' && obj[key] !== null && key !== 'file') {
+              if (typeof obj[key] === 'string') {
+                const val = obj[key].trim();
+                // Avoid picking up IDs or status codes as the main message
+                if (val.length > longestStr.length && !val.includes('-') && val.length < 5000) {
+                  longestStr = val;
+                }
+              } else if (typeof obj[key] === 'object' && obj[key] !== null && key !== 'file') {
                 const nested = extractText(obj[key]);
-                if (nested) return nested;
+                if (nested && nested.length > longestStr.length) longestStr = nested;
               }
             }
 
-            return "";
+            return longestStr;
           };
 
           if (typeof data === 'string') {
@@ -120,19 +172,25 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
             
             for (const item of items) {
               const text = extractText(item);
-              if (text && text.length > bestMatch.length) {
+              // Priority given to non-status messages
+              if (text && (text.length > bestMatch.length || (bestMatch.toLowerCase().includes('delivered') && !text.toLowerCase().includes('delivered')))) {
                 bestMatch = text;
               }
             }
             botResponse = bestMatch;
 
             if (!botResponse && typeof data === 'object' && data !== null) {
+              // Extract anything if we found nothing specific
               botResponse = JSON.stringify(data, null, 2);
             }
           }
           
-          if (!botResponse) {
-            botResponse = "The webhook returned success but no text content was found.";
+          if (!botResponse || botResponse.toLowerCase().includes('delivered to terminal')) {
+             if (botResponse && botResponse.toLowerCase().includes('delivered to terminal')) {
+                botResponse = "The terminal acknowledged the request (" + botResponse + "), but no AI agent response was included. Ensure your automation is configured to 'Respond to Webhook' with the agent output.";
+             } else {
+                botResponse = "The webhook returned success but no parseable text content was found in the response body.";
+             }
           }
         } else {
           throw new Error(`Webhook responded with status ${response.status}.`);
@@ -211,10 +269,15 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
           <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center text-secondary">
             <MessageSquareText size={16} />
           </div>
-          <div>
+          <div className="flex flex-col">
             <h3 className="text-sm font-bold text-white leading-none">AI Chat</h3>
-            {selectedFile && (
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">Context: {selectedFile.file.name}</p>
+            {selectedFile ? (
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
+                <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-medium">Chatting with: {selectedFile.file.name}</p>
+              </div>
+            ) : (
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1">No document selected</p>
             )}
           </div>
         </div>
@@ -291,7 +354,7 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
         >
           <input
             type="text"
-            placeholder="Type your message..."
+            placeholder={selectedFile ? `Ask about ${selectedFile.file.name}...` : "Type your message..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading}
