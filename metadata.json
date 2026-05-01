@@ -1,6 +1,6 @@
 {
   "name": "DocDrop",
-  "description": "The simplest way to pipe documents to your endpoints. Minimalist, secure, and fast.",
+  "description": "Pipe documents to your endpoints and chat with them instantly using AI integration.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
