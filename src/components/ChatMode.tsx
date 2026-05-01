@@ -66,9 +66,11 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
         const payload = {
           message: userMessage,
           chatInput: userMessage,
+          chat_input: userMessage, // Additional snake_case compatibility
           input: userMessage,
-          query: userMessage,     // Additional common key
-          question: userMessage,  // Additional common key
+          text: userMessage,       // Additional generic key
+          query: userMessage,
+          question: userMessage,
           sessionId,
           userId: 'chigozirimkalu@gmail.com',
           // Structured context for AI agents
@@ -79,9 +81,14 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
             fileType: selectedFile?.file.type,
             fileSize: selectedFile?.file.size,
           },
-          // Legacy keys for backward compatibility
+          // Legacy/Common keys for backward compatibility
           documentContext: selectedFile ? {
             id: selectedFile.id,
+            name: selectedFile.file.name,
+            type: selectedFile.file.type,
+            size: selectedFile.file.size
+          } : null,
+          file: selectedFile ? {
             name: selectedFile.file.name,
             type: selectedFile.file.type,
             size: selectedFile.file.size
@@ -90,7 +97,8 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
           timestamp: new Date().toISOString(),
           metadata: {
             source: 'DocDrop V2.1',
-            browser: navigator.userAgent
+            browser: navigator.userAgent,
+            selectedFile: selectedFile?.file.name
           }
         };
 
@@ -119,77 +127,96 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
           
           console.log("Full Webhook Response:", response.status, data);
           
-          const extractText = (obj: any): string => {
-            if (!obj) return "";
-            if (typeof obj === 'string') return obj;
+          const isStatusMessage = (text: string) => {
+            const statusPatterns = [
+              'delivered to terminal',
+              'workflow started',
+              'request received',
+              'queued',
+              'processing started',
+              'successfully'
+            ];
+            const lowerText = text.toLowerCase();
+            return statusPatterns.some(p => lowerText.includes(p)) && text.length < 100;
+          };
+
+          const findContent = (obj: any): string | null => {
+            if (!obj) return null;
+            if (typeof obj === 'string') {
+              return isStatusMessage(obj) ? null : obj.trim();
+            }
             
-            // 1. Check for known priority keys (order matters)
-            const keys = [
+            if (typeof obj !== 'object') return null;
+
+            // 1. Try high-priority keys first
+            const priorityKeys = [
               'output', 'response', 'text', 'content', 'answer', 'reply', 
-              'chat_output', 'chatOutput', 'message', 'result', 'body', 
-              'data', 'json', 'fulfillmentText', 'speech'
+              'chat_output', 'chatOutput', 'message', 'result', 'fulfillmentText'
             ];
             
-            for (const key of keys) {
-              if (obj[key]) {
-                if (typeof obj[key] === 'string' && obj[key].trim().length > 0) {
-                  // Ignore common "status" strings if possible
-                  const val = obj[key].trim();
-                  if (!val.toLowerCase().includes('delivered to terminal') || val.length > 30) {
-                     return val;
-                  }
+            for (const key of priorityKeys) {
+              const val = obj[key];
+              if (val) {
+                if (typeof val === 'string' && val.trim().length > 0) {
+                  const trimmed = val.trim();
+                  if (!isStatusMessage(trimmed)) return trimmed;
                 }
-                if (typeof obj[key] === 'object' && obj[key] !== null) {
-                  const nested = extractText(obj[key]);
+                if (typeof val === 'object' && val !== null) {
+                  const nested = findContent(val);
                   if (nested) return nested;
                 }
               }
             }
 
-            // 2. Greedily find any string that looks like an answer
-            let longestStr = "";
+            // 2. Greedily find ANY non-status string
             for (const key in obj) {
-              if (typeof obj[key] === 'string') {
-                const val = obj[key].trim();
-                // Avoid picking up IDs or status codes as the main message
-                if (val.length > longestStr.length && !val.includes('-') && val.length < 5000) {
-                  longestStr = val;
-                }
-              } else if (typeof obj[key] === 'object' && obj[key] !== null && key !== 'file') {
-                const nested = extractText(obj[key]);
-                if (nested && nested.length > longestStr.length) longestStr = nested;
+              const val = obj[key];
+              if (typeof val === 'string' && val.trim().length > 0 && !isStatusMessage(val)) {
+                return val.trim();
+              }
+              if (typeof val === 'object' && val !== null && key !== 'file' && key !== 'context' && key !== 'metadata') {
+                const nested = findContent(val);
+                if (nested) return nested;
               }
             }
 
-            return longestStr;
+            return null;
           };
 
-          if (typeof data === 'string') {
-            botResponse = data;
-          } else {
-            const items = Array.isArray(data) ? data : [data];
-            let bestMatch = "";
-            
-            for (const item of items) {
-              const text = extractText(item);
-              // Priority given to non-status messages
-              if (text && (text.length > bestMatch.length || (bestMatch.toLowerCase().includes('delivered') && !text.toLowerCase().includes('delivered')))) {
-                bestMatch = text;
-              }
-            }
-            botResponse = bestMatch;
+          // Primary extraction
+          botResponse = findContent(data) || "";
 
-            if (!botResponse && typeof data === 'object' && data !== null) {
-              // Extract anything if we found nothing specific
-              botResponse = JSON.stringify(data, null, 2);
+          // Fallback: If we only found status messages in an array/object
+          if (!botResponse) {
+            const extractAnyText = (obj: any): string => {
+              if (typeof obj === 'string') return obj.trim();
+              if (typeof obj !== 'object' || obj === null) return "";
+              for (const key in obj) {
+                const val = obj[key];
+                if (typeof val === 'string' && val.trim().length > 0) return val.trim();
+                if (typeof val === 'object' && val !== null) {
+                  const res = extractAnyText(val);
+                  if (res) return res;
+                }
+              }
+              return "";
+            };
+
+            const items = Array.isArray(data) ? data : [data];
+            for (const item of items) {
+              const anyText = extractAnyText(item);
+              if (anyText) {
+                botResponse = anyText;
+                break;
+              }
             }
           }
           
-          if (!botResponse || botResponse.toLowerCase().includes('delivered to terminal')) {
-             if (botResponse && botResponse.toLowerCase().includes('delivered to terminal')) {
-                botResponse = "The terminal acknowledged the request (" + botResponse + "), but no AI agent response was included. Ensure your automation is configured to 'Respond to Webhook' with the agent output.";
+          if (!botResponse || isStatusMessage(botResponse)) {
+             if (botResponse && isStatusMessage(botResponse)) {
+                botResponse = "The terminal received a status update: **\"" + botResponse + "\"**.\n\nHowever, **no AI response was found**. Your automation might be sending an immediate confirmation instead of the final agent output.\n\n**Common Fix:** In n8n, set your Webhook node to **'Respond: When Finished'** and ensure you use a **'Respond to Webhook'** node with the AI Agent's output.";
              } else {
-                botResponse = "The webhook returned success but no parseable text content was found in the response body.";
+                botResponse = "The webhook returned success but no text content was identified in the response body.";
              }
           }
         } else {
