@@ -49,6 +49,8 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
         // Send to custom webhook
         const payload = {
           message: userMessage,
+          chatInput: userMessage, // Common for n8n AI Agent nodes
+          input: userMessage,     // Common for generic webhooks
           userId: 'chigozirimkalu@gmail.com',
           file: selectedFile ? {
             name: selectedFile.file.name,
@@ -80,47 +82,76 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files }) => {
             if (!obj) return "";
             if (typeof obj === 'string') return obj;
             
-            // Priority keys for n8n/webhook responses (common AI agent outputs)
-            const keys = ['output', 'response', 'text', 'message', 'body', 'content', 'result', 'answer', 'reply', 'data', 'chat_output'];
-            for (const key of keys) {
-              if (obj[key] && typeof obj[key] === 'string') return obj[key];
-              // Sometimes n8n nests it in a 'data' or 'json' object
-              if (obj[key] && typeof obj[key] === 'object') {
-                const nested = extractText(obj[key]);
-                if (nested) return nested;
-              }
-            }
-            
-            // If it's an object but no standard key found, look for any string value that looks like content
-            for (const key in obj) {
-              if (typeof obj[key] === 'string' && obj[key].trim().length > 0) {
-                // Ignore small metadata-like strings
-                if (obj[key].length > 5) return obj[key];
-              }
-              if (typeof obj[key] === 'object' && obj[key] !== null) {
-                const nested = extractText(obj[key]);
-                if (nested) return nested;
+            // Priority order: AI agents often use these specific names for the final answer
+            const priorityKeys = ['output', 'response', 'text', 'content', 'answer', 'reply', 'chat_output', 'chatOutput'];
+            for (const key of priorityKeys) {
+              if (obj[key] && typeof obj[key] === 'string' && obj[key].trim().length > 2) {
+                const val = obj[key].trim();
+                // If we find a string that isn't just a generic "delivered" message, return it
+                if (!val.toLowerCase().includes('delivered to terminal') && !val.toLowerCase().includes('workflow started')) {
+                  return val;
+                }
               }
             }
 
-            return "";
+            // Fallback keys (more generic)
+            const fallbackKeys = ['message', 'body', 'result', 'data', 'json'];
+            for (const key of fallbackKeys) {
+              if (obj[key]) {
+                if (typeof obj[key] === 'string' && obj[key].trim().length > 2) {
+                  return obj[key].trim();
+                }
+                if (typeof obj[key] === 'object' && obj[key] !== null) {
+                  const nested = extractText(obj[key]);
+                  if (nested) return nested;
+                }
+              }
+            }
+            
+            // Greedily find any string that looks like content (longer strings)
+            let longestStr = "";
+            for (const key in obj) {
+              if (typeof obj[key] === 'string') {
+                if (obj[key].length > longestStr.length) longestStr = obj[key];
+              } else if (typeof obj[key] === 'object' && obj[key] !== null && key !== 'file') {
+                const nested = extractText(obj[key]);
+                if (nested && nested.length > longestStr.length) longestStr = nested;
+              }
+            }
+
+            return longestStr;
           };
 
           if (typeof data === 'string') {
             botResponse = data;
           } else {
-            // n8n often returns an array [ { json: { ... } } ] or just [ { ... } ]
-            const source = Array.isArray(data) ? data[0] : data;
-            botResponse = extractText(source);
+            // Check all items if it's an array, or just the object
+            const items = Array.isArray(data) ? data : [data];
+            let bestResponse = "";
+            
+            for (const item of items) {
+              const text = extractText(item);
+              if (text && text.length > bestResponse.length) {
+                // Prefer longer responses, especially if the current best is just a "delivered" status
+                if (!text.toLowerCase().includes('delivered to terminal') || !bestResponse) {
+                  bestResponse = text;
+                }
+              }
+            }
+            botResponse = bestResponse;
 
             if (!botResponse && typeof data === 'object' && data !== null) {
-              // Last resort: if we can't find a string, stringify the data so the user can see what came back
-              botResponse = "Received structured data but no clear text output: " + JSON.stringify(data, null, 2);
+              botResponse = "Received structured response but found no clear text content. Raw data: " + JSON.stringify(data, null, 2);
             }
           }
           
-          if (!botResponse) {
-            botResponse = "The webhook returned success but no parseable text content was found in the response body.";
+          if (!botResponse || botResponse.toLowerCase().includes('delivered to terminal')) {
+             // If we still only have the "delivered" message, it means n8n hasn't sent the AI content back in this request.
+             if (botResponse && botResponse.toLowerCase().includes('delivered to terminal')) {
+                botResponse = "The terminal acknowledged the request (" + botResponse + "), but no AI agent response was included. Ensure n8n is configured to 'Respond to Webhook' with the agent output.";
+             } else {
+                botResponse = "The webhook returned success but no parseable text content was found in the response body.";
+             }
           }
         } else {
           throw new Error(`Webhook responded with status ${response.status}. Ensure your service handles POST requests.`);
