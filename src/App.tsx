@@ -107,7 +107,10 @@ export default function App() {
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white shadow-[0_0_20px_rgba(59,130,246,0.3)]">
             <Zap size={18} strokeWidth={2.5} fill="currentColor" />
           </div>
-          <span className="text-xl font-bold tracking-tight">DocDrop</span>
+          <div className="flex flex-col">
+            <span className="text-xl font-bold tracking-tight">DocDrop</span>
+            <span className="text-[8px] uppercase tracking-widest text-primary/60 font-black">v2.5 LIVE</span>
+          </div>
         </div>
 
         <nav className="flex-1 px-4 py-4 space-y-2">

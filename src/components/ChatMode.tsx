@@ -61,235 +61,143 @@ export const ChatMode: React.FC<ChatModeProps> = ({ files, webhookUrl }) => {
       const chatWebhook = webhookUrl || import.meta.env.VITE_CHAT_WEBHOOK_URL;
       let botResponse = "";
 
-      if (chatWebhook && !chatWebhook.includes('placeholder')) {
-        // Send to custom webhook with enhanced context
-        const payload = {
-          message: userMessage,
-          chatInput: userMessage,
-          chat_input: userMessage, // Additional snake_case compatibility
-          input: userMessage,
-          text: userMessage,       // Additional generic key
-          query: userMessage,
-          question: userMessage,
-          sessionId,
-          userId: 'chigozirimkalu@gmail.com',
-          // Structured context for AI agents
-          context: {
-            type: 'document_chat',
-            fileId: selectedFile?.id,
-            fileName: selectedFile?.file.name,
-            fileType: selectedFile?.file.type,
-            fileSize: selectedFile?.file.size,
-          },
-          // Legacy/Common keys for backward compatibility
-          documentContext: selectedFile ? {
-            id: selectedFile.id,
-            name: selectedFile.file.name,
-            type: selectedFile.file.type,
-            size: selectedFile.file.size
-          } : null,
-          file: selectedFile ? {
-            name: selectedFile.file.name,
-            type: selectedFile.file.type,
-            size: selectedFile.file.size
-          } : null,
-          fileName: selectedFile?.file.name || 'None',
-          timestamp: new Date().toISOString(),
-          metadata: {
-            source: 'DocDrop V2.1',
-            browser: navigator.userAgent,
-            selectedFile: selectedFile?.file.name
-          }
-        };
+      if (!chatWebhook || chatWebhook.includes('placeholder')) {
+        throw new Error("Chat webhook URL is not configured. please set VITE_CHAT_WEBHOOK_URL in your environment variables.");
+      }
 
-        const response = await fetch(chatWebhook, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/plain, */*'
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (response.ok) {
-          const contentType = response.headers.get('content-type');
-          let data: any;
-          
-          if (contentType && contentType.includes('application/json')) {
-            data = await response.json();
-          } else {
-            data = await response.text();
-            // Try to parse text as JSON anyway if it looks like it
-            if (typeof data === 'string' && (data.startsWith('{') || data.startsWith('['))) {
-              try { data = JSON.parse(data); } catch (e) { /* ignore */ }
-            }
-          }
-          
-          console.log("Full Webhook Response:", response.status, data);
-          
-          const isStatusMessage = (text: string) => {
-            const statusPatterns = [
-              'delivered to terminal',
-              'workflow started',
-              'request received',
-              'queued',
-              'processing started',
-              'successfully'
-            ];
-            const lowerText = text.toLowerCase();
-            return statusPatterns.some(p => lowerText.includes(p)) && text.length < 100;
-          };
-
-          const findContent = (obj: any): string | null => {
-            if (!obj) return null;
-            
-            // If the object itself is a string, check if it's a valid answer
-            if (typeof obj === 'string') {
-              const trimmed = obj.trim();
-              if (trimmed.length > 0 && !isStatusMessage(trimmed)) return trimmed;
-              return null;
-            }
-            
-            if (typeof obj !== 'object') return null;
-
-            // 0. Priority: Explicit n8n Output from your screenshot
-            if (obj.output && typeof obj.output === 'string' && !isStatusMessage(obj.output)) {
-              return obj.output.trim();
-            }
-
-            // 1. Try other high-priority keys
-            const priorityKeys = [
-              'response', 'text', 'content', 'answer', 'reply', 
-              'chat_output', 'chatOutput', 'message', 'result', 'fulfillmentText'
-            ];
-            
-            for (const key of priorityKeys) {
-              const val = obj[key];
-              if (val) {
-                if (typeof val === 'string' && val.trim().length > 0) {
-                  const trimmed = val.trim();
-                  if (!isStatusMessage(trimmed)) return trimmed;
-                }
-                if (typeof val === 'object' && val !== null) {
-                  const nested = findContent(val);
-                  if (nested) return nested;
-                }
-              }
-            }
-
-            // 2. Greedily find ANY non-status string
-            for (const key in obj) {
-              const val = obj[key];
-              if (typeof val === 'string' && val.trim().length > 0 && !isStatusMessage(val)) {
-                return val.trim();
-              }
-              if (typeof val === 'object' && val !== null && key !== 'file' && key !== 'context' && key !== 'metadata') {
-                const nested = findContent(val);
-                if (nested) return nested;
-              }
-            }
-
-            return null;
-          };
-
-          // Primary extraction
-          botResponse = findContent(data) || "";
-
-          // Fallback: If we only found status messages in an array/object
-          if (!botResponse) {
-            const extractAnyText = (obj: any): string => {
-              if (typeof obj === 'string') return obj.trim();
-              if (typeof obj !== 'object' || obj === null) return "";
-              for (const key in obj) {
-                const val = obj[key];
-                if (typeof val === 'string' && val.trim().length > 0) return val.trim();
-                if (typeof val === 'object' && val !== null) {
-                  const res = extractAnyText(val);
-                  if (res) return res;
-                }
-              }
-              return "";
-            };
-
-            const items = Array.isArray(data) ? data : [data];
-            for (const item of items) {
-              const anyText = extractAnyText(item);
-              if (anyText) {
-                botResponse = anyText;
-                break;
-              }
-            }
-          }
-          
-          if (!botResponse || isStatusMessage(botResponse)) {
-             if (botResponse && isStatusMessage(botResponse)) {
-                botResponse = "The terminal received a status update: **\"" + botResponse + "\"**.\n\nHowever, **no AI response was found**. Your automation might be sending an immediate confirmation instead of the final agent output.\n\n**Common Fix:** In n8n, set your Webhook node to **'Respond: When Finished'** and ensure you use a **'Respond to Webhook'** node with the AI Agent's output.";
-             } else {
-                botResponse = "The webhook returned success but no text content was identified in the response body.";
-             }
-          }
-        } else {
-          throw new Error(`Webhook responded with status ${response.status}.`);
+      // Send to custom webhook with enhanced context
+      const payload = {
+        message: userMessage,
+        chatInput: userMessage,
+        chat_input: userMessage,
+        input: userMessage,
+        text: userMessage,
+        query: userMessage,
+        question: userMessage,
+        sessionId,
+        userId: 'chigozirimkalu@gmail.com',
+        context: {
+          type: 'document_chat',
+          fileId: selectedFile?.id,
+          fileName: selectedFile?.file.name,
+          fileType: selectedFile?.file.type,
+          fileSize: selectedFile?.file.size,
+        },
+        documentContext: selectedFile ? {
+          id: selectedFile.id,
+          name: selectedFile.file.name,
+          type: selectedFile.file.type,
+          size: selectedFile.file.size
+        } : null,
+        file: selectedFile ? {
+          name: selectedFile.file.name,
+          type: selectedFile.file.type,
+          size: selectedFile.file.size
+        } : null,
+        fileName: selectedFile?.file.name || 'None',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          source: 'DocDrop v2.5',
+          browser: navigator.userAgent,
+          selectedFile: selectedFile?.file.name
         }
-      } else {
-        // Fallback to Gemini
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-          throw new Error("Neither a chat webhook nor a Gemini API key is configured. Please check your settings.");
+      };
+
+      const response = await fetch(chatWebhook, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        const contentType = response.headers.get('content-type');
+        let data: any;
+        
+        if (contentType && contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          data = await response.text();
+          if (typeof data === 'string' && (data.startsWith('{') || data.startsWith('['))) {
+            try { data = JSON.parse(data); } catch (e) { /* ignore */ }
+          }
         }
         
-        const ai = new GoogleGenAI({ apiKey });
-        let contents: any[] = [];
-
-        if (selectedFile) {
-          const reader = new FileReader();
-          const fileDataPromise = new Promise<string>((resolve) => {
-            reader.onload = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              resolve(base64);
-            };
-            reader.readAsDataURL(selectedFile.file);
-          });
-
-          const base64Data = await fileDataPromise;
-          contents = [
-            {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: selectedFile.file.type,
-                    data: base64Data,
-                  },
-                },
-                { text: userMessage },
-              ],
-            },
+        console.log("Webhook Response Received:", data);
+        
+        const isStatusMessage = (text: string) => {
+          const statusPatterns = [
+            'delivered to terminal',
+            'workflow started',
+            'request received',
+            'queued',
+            'processing started',
+            'successfully'
           ];
-        } else {
-          contents = [{ parts: [{ text: userMessage }] }];
-        }
+          const lowerText = text.toLowerCase();
+          return statusPatterns.some(p => lowerText.includes(p)) && text.length < 100;
+        };
 
-        const result = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents,
-          config: {
-            systemInstruction: selectedFile 
-              ? "You are a helpful assistant that answers questions about documents. Use the provided document to answer the user's question accurately."
-              : "You are a helpful, minimalist technical assistant. Provide clear, concise answers.",
+        // Simplified but powerful extraction targeting n8n 'output'
+        const extractContent = (obj: any): string | null => {
+          if (!obj) return null;
+          if (typeof obj === 'string') return isStatusMessage(obj) ? null : obj.trim();
+          if (typeof obj !== 'object') return null;
+
+          // 1. Direct 'output' key check (Priority for n8n)
+          if (obj.output && typeof obj.output === 'string' && !isStatusMessage(obj.output)) {
+            return obj.output.trim();
           }
-        });
 
-        botResponse = result.text || "";
+          // 2. High priority keys
+          const keys = ['response', 'text', 'content', 'message', 'result', 'answer', 'reply'];
+          for (const key of keys) {
+            const val = obj[key];
+            if (val && typeof val === 'string' && !isStatusMessage(val)) return val.trim();
+            if (val && typeof val === 'object') {
+              const res = extractContent(val);
+              if (res) return res;
+            }
+          }
+
+          // 3. Fallback: Any non-status string
+          for (const key in obj) {
+            const val = obj[key];
+            if (typeof val === 'string' && val.trim().length > 0 && !isStatusMessage(val)) return val.trim();
+            if (typeof val === 'object' && val !== null && key !== 'file' && key !== 'context') {
+              const res = extractContent(val);
+              if (res) return res;
+            }
+          }
+          return null;
+        };
+
+        // If data is an array (common in n8n list nodes), check first item
+        const root = Array.isArray(data) ? data[0] : data;
+        botResponse = extractContent(root) || "";
+
+        if (!botResponse || isStatusMessage(botResponse)) {
+          if (botResponse && isStatusMessage(botResponse)) {
+            botResponse = "Status Update Received: **\"" + botResponse + "\"**\n\n**Warning:** No actual AI agent output was found in the webhook response. Ensure your n8n workflow ends with a 'Respond to Webhook' node returning an 'output' field with the real agent response.";
+          } else {
+            // Last ditch effort: stringify the whole thing if it's small, otherwise error
+            if (typeof data === 'object' && Object.keys(data).length > 0) {
+              botResponse = "Webhook returned data but no clear message was found. Data received: \n```json\n" + JSON.stringify(data, null, 2).substring(0, 500) + "\n```";
+            } else {
+              botResponse = "The webhook returned success but the response body was empty or unparseable.";
+            }
+          }
+        }
+      } else {
+        throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
       }
 
       setMessages(prev => [...prev, { role: 'bot', content: botResponse || "I'm sorry, I couldn't generate a response." }]);
     } catch (err: any) {
-      console.error("Chat Error:", err);
-      let errorMessage = "Failed to get response from AI.";
-      if (err.message.includes('fetch') || err.message.includes('status')) {
-        errorMessage = `Webhook error: ${err.message}. If using localhost, ensure your server allows CORS and check for Mixed Content (HTTPS vs HTTP) blocks.`;
-      }
-      setError(errorMessage);
+      console.error("Webhook Error:", err);
+      setError(`Connection Error: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
